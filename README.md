@@ -1,1 +1,1 @@
-# STUMPY Live Demo
+# STUMPY Demo
