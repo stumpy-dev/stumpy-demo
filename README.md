@@ -1,1 +1,1 @@
-# stumpy.github.io
+# STUMPY Live Demo
