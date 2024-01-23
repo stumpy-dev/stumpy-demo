@@ -1,3 +1,7 @@
 #!/bin/bash
 
-panel convert index.py --to pyodide-worker
+./convert.sh
+echo
+echo "Navigate to: http://localhost:8000/index.html"
+echo
+python -m http.server
