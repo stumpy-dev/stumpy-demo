@@ -512,13 +512,12 @@ class MATRIX_PROFILE:
 class DISTANCE_PROFILE:
     def __init__(self):
         self.sizing_mode = SIZING_MODE
-        self.window = None
-        self.m = None
 
         self.df = None
         self.T = None
         self.pattern_idx_cds = None
         self.ts_cds = None
+        self.quad_cds = None
         self.hidden_ts_cds = None
         self.pattern_cds = None
         self.match_cds = None
@@ -550,6 +549,29 @@ class DISTANCE_PROFILE:
 
     def get_ts_dict(self, df):
         return self.df.to_dict(orient="list")
+    
+    def get_quad_dict(self, m, pattern_idx, match_idx):
+        # if match_idx is None:
+        #     match_idx = df.loc[pattern_idx, "idx"].astype(int)
+        quad_dict = dict(
+            pattern_left=[pattern_idx],
+            pattern_right=[pattern_idx + m - 1],
+            pattern_top=[self.T.max()],
+            pattern_bottom=[0],
+            match_left=[match_idx],
+            match_right=[match_idx + m - 1],
+            match_top=[self.T.max()],
+            match_bottom=[0],
+            # vert_line_left=[pattern_idx - 5],
+            # vert_line_right=[pattern_idx + 5],
+            # vert_line_top=[max(df["distance"])],
+            # vert_line_bottom=[0],
+            # hori_line_left=[0],
+            # hori_line_right=[max(df["index"])],
+            # hori_line_top=[df.loc[pattern_idx, "distance"] - 0.01],
+            # hori_line_bottom=[df.loc[pattern_idx, "distance"] + 0.01],
+        )
+        return quad_dict
 
     def get_ts_plot(self, color="black"):
         """
@@ -562,12 +584,30 @@ class DISTANCE_PROFILE:
             tools=["box_select"],
         )
         ts_plot.scatter(x="index", y="y", source=self.hidden_ts_cds, color="white")
+        ts_plot.quad(
+            "pattern_left",
+            "pattern_right",
+            "pattern_top",
+            "pattern_bottom",
+            source=self.quad_cds,
+            name="pattern_quad",
+            color="#54b847",
+        )
+        ts_plot.quad(
+            "match_left",
+            "match_right",
+            "match_top",
+            "match_bottom",
+            source=self.quad_cds,
+            name="match_quad",
+            color="#696969",
+            alpha=0.5,
+        )
         ts_plot.line(x="index", y="y", source=self.ts_cds, color=color)
         ts_plot.x_range = Range1d(
             0, max(self.df["index"]), bounds=(0, max(self.df["x"]))
         )
         ts_plot.y_range = Range1d(0, max(self.df["y"]), bounds=(0, max(self.df["y"])))
-
         return ts_plot
 
     def get_dp_plot(self, color="black"):
@@ -606,6 +646,18 @@ class DISTANCE_PROFILE:
         self.df = self.get_df_from_file()
         self.ts_cds = ColumnDataSource(self.get_ts_dict(self.df))
         self.T = np.array(self.ts_cds.data.get("y"))
+        self.quad_cds = ColumnDataSource(
+            dict(
+                pattern_left=[],
+                pattern_right=[],
+                pattern_top=[],
+                pattern_bottom=[],
+                match_left=[],
+                match_right=[],
+                match_top=[],
+                match_bottom=[],
+            )
+        )
         self.pattern_idx_cds = ColumnDataSource(data=dict(index=[]))
         self.hidden_ts_cds = ColumnDataSource(self.get_ts_dict(self.df))
         self.pattern_cds = ColumnDataSource(data=dict(index=[], y=[]))
@@ -617,7 +669,7 @@ class DISTANCE_PROFILE:
         self.dp_plot = self.get_dp_plot()
         self.pm_plot = self.get_pm_plot()
 
-    def update_distance_profile_match(self):
+    def update_plots(self):
         Q = np.array(self.pattern_cds.data.get("y"))
         μ_Q = np.mean(Q)
         σ_Q = np.std(Q)
@@ -643,6 +695,8 @@ class DISTANCE_PROFILE:
             index=list(range(len(Q))),
             y=list(self.T[match_idx : match_idx + m]),
         )
+
+        self.quad_cds.data = self.get_quad_dict(m, pattern_idx, match_idx)
 
     def clear_plots(self, attr, old, new):
         self.match_cds.data = dict(index=[], y=[])
@@ -682,7 +736,7 @@ class DISTANCE_PROFILE:
                 """,
             ),
         )
-        self.find_btn.on_click(self.update_distance_profile_match)
+        self.find_btn.on_click(self.update_plots)
         self.reset_btn.on_click(self.reset_plots)
 
     def get_layout(self):
