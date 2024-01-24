@@ -2,7 +2,6 @@
 
 import pandas as pd
 import numpy as np
-from scipy.signal import convolve
 from bokeh.plotting import figure
 from bokeh.layouts import layout
 from bokeh.models import (
@@ -16,6 +15,7 @@ from bokeh.models import (
     Div,
     Tabs,
     TabPanel,
+    CustomJS,
 )
 import panel as pn
 
@@ -39,7 +39,6 @@ class MATRIX_PROFILE:
         self.mp_plot = None
         self.pm_plot = None
         self.logo_div = None
-        self.heroku_div = None
 
         self.slider = None
         self.play_btn = None
@@ -57,13 +56,9 @@ class MATRIX_PROFILE:
 
         # mp_df = pd.read_csv('matrix_profile.csv')
         base_url = "https://raw.githubusercontent.com/seanlaw/stumpy-live-demo/master"
-        raw_df = pd.read_csv(
-            base_url + "/raw.csv"
-        )
+        raw_df = pd.read_csv(base_url + "/raw.csv")
 
-        mp_df = pd.read_csv(
-            base_url + "/matrix_profile.csv"
-        )
+        mp_df = pd.read_csv(base_url + "/matrix_profile.csv")
 
         self.window = raw_df.shape[0] - mp_df.shape[0] + 1
         self.m = raw_df.shape[0] - mp_df.shape[0] + 1
@@ -283,19 +278,9 @@ class MATRIX_PROFILE:
         text = "<a href='https://stumpy.readthedocs.io/en/latest/'>"
         text += "<img src='https://raw.githubusercontent.com/TDAmeritrade/stumpy/main"
         text += "/docs/images/stumpy_logo_small.png'></a>"
-        logo_div = Div(
-            text=text
-        )
+        logo_div = Div(text=text)
 
         return logo_div
-
-    def get_heroku_div(self):
-        """
-        STUMPY Heroku App Link
-        """
-        heroku_div = Div(text="http://tiny.cc/stumpy-demo")
-
-        return heroku_div
 
     def get_slider(self, value=0):
         slider = Slider(
@@ -447,7 +432,6 @@ class MATRIX_PROFILE:
         self.txt_inp = self.get_text_input()
         self.pattern_btn, self.match_btn, self.reset_btn = self.get_buttons()
         self.logo_div = self.get_logo_div()
-        self.heroku_div = self.get_heroku_div()
 
     def set_callbacks(self):
         self.slider.on_change("value", self.update_plots)
@@ -475,15 +459,205 @@ class MATRIX_PROFILE:
 
         return l
 
-    def get_raw_layout(self):
-        self.get_data()
-        self.get_plots(ts_plot_color="#54b847")
 
-        l = layout([[self.ts_plot], [self.mp_plot]], sizing_mode=self.sizing_mode)
+class DISTANCE_PROFILE:
+    def __init__(self):
+        self.sizing_mode = SIZING_MODE
+        self.window = None
+        self.m = None
+
+        self.df = None
+        self.T = None
+        self.pattern_idx_cds = None
+        self.ts_cds = None
+        self.hidden_ts_cds = None
+        self.pattern_cds = None
+        self.match_cds = None
+        self.dp_cds = None
+
+        self.reset_btn = None
+        self.find_btn = None
+
+        self.ts_plot = None
+        self.dp_plot = None
+        self.pm_plot = None
+
+    def get_df_from_file(self):
+        # raw_df = pd.read_csv('raw.csv')
+
+        # mp_df = pd.read_csv('matrix_profile.csv')
+        base_url = "https://raw.githubusercontent.com/seanlaw/stumpy-live-demo/master"
+        raw_df = pd.read_csv(base_url + "/raw.csv")
+
+        mp_df = pd.read_csv(base_url + "/matrix_profile.csv")
+
+        self.window = raw_df.shape[0] - mp_df.shape[0] + 1
+        self.m = raw_df.shape[0] - mp_df.shape[0] + 1
+        self.min_distance_idx = mp_df["distance"].argmin()
+
+        df = pd.merge(raw_df, mp_df, left_index=True, how="left", right_index=True)
+
+        return df.reset_index()
+
+    def get_ts_dict(self, df):
+        return self.df.to_dict(orient="list")
+
+    def get_ts_plot(self, color="black"):
+        """
+        Time Series Plot
+        """
+        ts_plot = figure(
+            toolbar_location=None,
+            sizing_mode=self.sizing_mode,
+            title="Raw Time Series or Sequence",
+            tools=["box_select"],
+        )
+        ts_plot.scatter(x="index", y="y", source=self.hidden_ts_cds, color="white")
+        ts_plot.line(x="index", y="y", source=self.ts_cds, color=color)
+        ts_plot.x_range = Range1d(
+            0, max(self.df["index"]), bounds=(0, max(self.df["x"]))
+        )
+        ts_plot.y_range = Range1d(0, max(self.df["y"]), bounds=(0, max(self.df["y"])))
+
+        return ts_plot
+
+    def get_dp_plot(self, color="black"):
+        dp_plot = figure(
+            x_range=self.ts_plot.x_range,
+            toolbar_location=None,
+            sizing_mode=self.sizing_mode,
+            title="Distance Profile",
+        )
+        dp_plot.y_range.start = 0
+        dp_plot.line(x="index", y="y", source=self.dp_cds, color=color)
+
+        return dp_plot
+
+    def get_pm_plot(self):
+        pm_plot = figure(
+            toolbar_location=None,
+            sizing_mode=self.sizing_mode,
+            title="Pattern Match Overlay",
+        )
+        pm_plot.line(
+            x="index", y="y", source=self.pattern_cds, color="#54b847", line_width=2
+        )
+        pm_plot.line(
+            x="index",
+            y="y",
+            source=self.match_cds,
+            color="#696969",
+            line_width=2,
+            alpha=0.5,
+        )
+
+        return pm_plot
+
+    def get_data(self):
+        self.df = self.get_df_from_file()
+        self.ts_cds = ColumnDataSource(self.get_ts_dict(self.df))
+        self.T = np.array(self.ts_cds.data.get("y"))
+        self.pattern_idx_cds = ColumnDataSource(data=dict(index=[]))
+        self.hidden_ts_cds = ColumnDataSource(self.get_ts_dict(self.df))
+        self.pattern_cds = ColumnDataSource(data=dict(index=[], y=[]))
+        self.match_cds = ColumnDataSource(data=dict(index=[], y=[]))
+        self.dp_cds = ColumnDataSource(data=dict(index=[], y=[]))
+
+    def get_plots(self, ts_plot_color="black"):
+        self.ts_plot = self.get_ts_plot(color=ts_plot_color)
+        self.dp_plot = self.get_dp_plot()
+        self.pm_plot = self.get_pm_plot()
+
+    def update_distance_profile_match(self):
+        Q = np.array(self.pattern_cds.data.get("y"))
+        μ_Q = np.mean(Q)
+        σ_Q = np.std(Q)
+        m = len(Q)
+        D = np.empty(len(self.T) - m + 1)
+        for i in range(len(D)):
+            QT = np.dot(Q, self.T[i : i + m])
+            M_T = np.mean(self.T[i : i + m])
+            Σ_T = np.std(self.T[i : i + m])
+            denom = denom = (σ_Q * Σ_T) * m
+            ρ = (QT - (μ_Q * M_T) * m) / denom
+            D[i] = np.sqrt(np.abs(2 * m * (1.0 - ρ)))
+
+        pattern_idx = self.pattern_idx_cds.data.get("index")[0]
+        excl_zone = int(np.ceil(m / 4))
+        zone_start = max(0, pattern_idx - excl_zone)
+        zone_stop = min(D.shape[-1], pattern_idx + excl_zone)
+        D[..., zone_start : zone_stop + 1] = np.nan
+
+        self.dp_cds.data = dict(index=list(range(len(D))), y=list(D))
+        match_idx = np.nanargmin(D)
+        self.match_cds.data = dict(
+            index=list(range(len(Q))),
+            y=list(self.T[match_idx : match_idx + m]),
+        )
+
+    def clear_plots(self, attr, old, new):
+        self.match_cds.data = dict(index=[], y=[])
+        self.dp_cds.data = dict(index=[], y=[])
+
+    def reset_plots(self):
+        self.pattern_cds.data = dict(index=[], y=[])
+        self.match_cds.data = dict(index=[], y=[])
+        self.dp_cds.data = dict(index=[], y=[])
+
+    def get_buttons(self):
+        self.reset_btn = Button(label="Reset")
+        self.find_btn = Button(label="Find Pattern")
+
+    def set_callbacks(self):
+        self.hidden_ts_cds.selected.on_change("indices", self.clear_plots)
+        self.hidden_ts_cds.selected.js_on_change(
+            "indices",
+            CustomJS(
+                args=dict(
+                    hidden_ts_cds=self.hidden_ts_cds,
+                    pattern_cds=self.pattern_cds,
+                    pattern_idx_cds=self.pattern_idx_cds,
+                ),
+                code="""
+                var inds = cb_obj.indices;
+                var hidden_ts_cds_data = hidden_ts_cds.data;
+                var selected = {'index': [], 'y': []};
+                var pattern_idx = {'index': []};
+                pattern_idx['index'].push(inds[0]);
+                for (var i = 0; i <= inds[inds.length-1] - inds[0] + 1; i++) {
+                    selected['index'].push(i);
+                    selected['y'].push(hidden_ts_cds_data['y'][inds[0] + i]);
+                }
+                pattern_cds.data = selected;
+                pattern_idx_cds.data = pattern_idx;
+                """,
+            ),
+        )
+        self.find_btn.on_click(self.update_distance_profile_match)
+        self.reset_btn.on_click(self.reset_plots)
+
+    def get_layout(self):
+        self.get_data()
+        self.get_plots()
+        self.get_buttons()
+        self.set_callbacks()
+
+        l = layout(
+            [
+                [self.ts_plot],
+                [self.dp_plot],
+                [self.pm_plot],
+                [self.find_btn, self.reset_btn],
+            ],
+            sizing_mode=self.sizing_mode,
+        )
 
         return l
 
 
 mp = MATRIX_PROFILE()
 mp_layout = TabPanel(child=mp.get_layout(), title="Matrix Profile")
-pn.state.curdoc.add_root(Tabs(tabs=[mp_layout], sizing_mode=SIZING_MODE))
+dp = DISTANCE_PROFILE()
+dp_layout = TabPanel(child=dp.get_layout(), title="Distance Profile")
+
+pn.state.curdoc.add_root(Tabs(tabs=[mp_layout, dp_layout], sizing_mode=SIZING_MODE))
