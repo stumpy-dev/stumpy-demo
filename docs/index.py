@@ -657,6 +657,16 @@ class DISTANCE_PROFILE:
         self.pattern_cds.data = dict(index=[], y=[])
         self.match_cds.data = dict(index=[], y=[])
         self.dp_cds.data = dict(index=[], y=[])
+        self.quad_cds.data = dict(
+                pattern_left=[],
+                pattern_right=[],
+                pattern_top=[],
+                pattern_bottom=[],
+                match_left=[],
+                match_right=[],
+                match_top=[],
+                match_bottom=[],
+            )
 
     def get_buttons(self):
         self.reset_btn = Button(label="Reset")
